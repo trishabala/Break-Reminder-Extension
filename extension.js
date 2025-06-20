@@ -50,11 +50,9 @@ export default class BreakReminderExtension extends Extension {
 
         this.source.addNotification(notification);
 
-        // Reset the countdown
+        // Reset the countdown for next cycle
         this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
         this._updateCountdownDisplay();
-
-        return GLib.SOURCE_CONTINUE;
     }
 
     /**
@@ -74,15 +72,18 @@ export default class BreakReminderExtension extends Extension {
     }
 
     /**
-     * Countdown timer that updates every second
+     * Countdown timer that updates every second and handles notifications
      */
     _updateCountdown() {
         if (this.remainingSeconds > 0) {
             this.remainingSeconds--;
             this._updateCountdownDisplay();
             return GLib.SOURCE_CONTINUE;
+        } else {
+            // Time's up! Show notification and reset
+            this._showBreakNotification();
+            return GLib.SOURCE_CONTINUE; // Continue the timer for next cycle
         }
-        return GLib.SOURCE_REMOVE;
     }
 
     /**
@@ -92,24 +93,20 @@ export default class BreakReminderExtension extends Extension {
         this.isRunning = !this.isRunning;
 
         if (this.isRunning) {
-            // Start the reminder
+            // Clean up any existing timers
             if (this.timerId) {
                 GLib.source_remove(this.timerId);
+                this.timerId = null;
             }
-            
-            // Start main timer
-            this.timerId = GLib.timeout_add(
-                GLib.PRIORITY_DEFAULT,
-                this.REMINDER_INTERVAL_MS,
-                () => this._showBreakNotification()
-            );
-
-            // Start countdown timer (updates every second)
             if (this.countdownTimerId) {
                 GLib.source_remove(this.countdownTimerId);
+                this.countdownTimerId = null;
             }
             
+            // Start with full countdown
             this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
+            
+            // Start single countdown timer that handles both countdown and notifications
             this.countdownTimerId = GLib.timeout_add_seconds(
                 GLib.PRIORITY_DEFAULT,
                 1,
@@ -153,19 +150,17 @@ export default class BreakReminderExtension extends Extension {
 
             // Restart timer if running
             if (this.isRunning) {
+                // Clean up existing timers
                 if (this.timerId) {
                     GLib.source_remove(this.timerId);
+                    this.timerId = null;
                 }
                 if (this.countdownTimerId) {
                     GLib.source_remove(this.countdownTimerId);
+                    this.countdownTimerId = null;
                 }
                 
-                this.timerId = GLib.timeout_add(
-                    GLib.PRIORITY_DEFAULT,
-                    this.REMINDER_INTERVAL_MS,
-                    () => this._showBreakNotification()
-                );
-
+                // Start fresh with new interval
                 this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
                 this.countdownTimerId = GLib.timeout_add_seconds(
                     GLib.PRIORITY_DEFAULT,
