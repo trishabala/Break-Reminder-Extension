@@ -25,6 +25,104 @@ export default class BreakReminderExtension extends Extension {
         this.remainingSeconds = 0; // The current countdown value
         this.notificationSource = null;
         this.isSnoozing = false; // New state variable to track snooze
+        
+        // Add sleep/resume detection
+        this.lastUpdateTime = 0; // Keep for logging if needed, but not for direct time-based restart
+        // this.sleepDetectionThreshold = 5000; // No longer needed for active restart logic
+        this._loginManager = null;
+        this._prepareForSleepId = null;
+    }
+
+    /**
+     * Initialize sleep/resume detection
+     */
+    _initSleepDetection() {
+        try {
+            // Try to get login manager for sleep detection
+            this._loginManager = Gio.DBusProxy.makeProxyWrapper(
+                '<node><interface name="org.freedesktop.login1.Manager"><signal name="PrepareForSleep"><arg type="b" name="start"/></signal></interface></node>'
+            );
+            
+            // Note: Gio.DBusProxy.makeProxyWrapper creates a constructor.
+            // You need to instantiate it to get the proxy object.
+            const proxy = new this._loginManager(
+                Gio.DBus.system,
+                'org.freedesktop.login1',
+                '/org/freedesktop/login1'
+            );
+            
+            this._prepareForSleepId = proxy.connectSignal('PrepareForSleep', (proxy, sender, [isSleeping]) => {
+                if (isSleeping) {
+                    console.log('Break reminder: System going to sleep');
+                    this._onSystemSleep();
+                } else {
+                    console.log('Break reminder: System resuming from sleep');
+                    this._onSystemResume();
+                }
+            });
+            
+            console.log('Break reminder: Sleep detection initialized');
+        } catch (error) {
+            console.log('Break reminder: Could not initialize sleep detection:', error);
+            // Fallback to time-based detection only (removed this as a primary mechanism for restart)
+        }
+    }
+
+    /**
+     * Handle system going to sleep
+     */
+    _onSystemSleep() {
+        if (this.isRunning) {
+            // No need to save lastUpdateTime here if we trust DBus signals for resume.
+            // However, keeping it might be useful for calculating actual sleep duration in _onSystemResume.
+            this.lastUpdateTime = Date.now(); 
+            console.log('Break reminder: Saved state before sleep');
+        }
+    }
+
+    /**
+     * Handle system resuming from sleep
+     */
+    _onSystemResume() {
+        if (this.isRunning) { // No need to check this.lastUpdateTime > 0 if DBus is reliable
+            const sleepDuration = Date.now() - this.lastUpdateTime; // Calculate for logging
+            console.log(`Break reminder: System resumed. Sleep duration: ${Math.round(sleepDuration / 1000)} seconds.`);
+            
+            // Restart the timer to ensure it's working
+            this._restartTimer();
+        }
+    }
+
+    /**
+     * Removed _detectSleepResume() function as it's unreliable for active timer management.
+     * We will rely on DBus signals for sleep/resume.
+     */
+    // _detectSleepResume() { ... } 
+
+    /**
+     * Restart the timer (used after sleep/resume or settings change)
+     */
+    _restartTimer() {
+        if (!this.isRunning) return; // Only restart if currently running
+
+        console.log('Break reminder: Restarting timer...');
+        
+        // Clear existing timer if any
+        if (this.countdownTimerId) {
+            GLib.source_remove(this.countdownTimerId);
+            this.countdownTimerId = null;
+        }
+        
+        // Set up the timer again, starting from current remainingSeconds
+        // This ensures continuity if resuming from sleep or after settings change
+        this.countdownTimerId = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT,
+            1, // Call _updateCountdown every 1 second
+            () => this._updateCountdown()
+        );
+        
+        // Update display to reflect current remaining time
+        this._updateCountdownDisplay();
     }
 
     /**
@@ -32,10 +130,8 @@ export default class BreakReminderExtension extends Extension {
      * The notification content changes based on whether it's a regular reminder or after a snooze.
      */
     _showBreakNotification() {
-        // Calculate the actual interval that just passed to use in the notification body
-        // This is based on the REMINDER_INTERVAL_MS, not the remainingSeconds
         const intervalMinutes = Math.round(this.REMINDER_INTERVAL_MS / 60 / 1000);
-        const intervalSecondsDisplay = this.REMINDER_INTERVAL_MS / 1000; // Total seconds for display
+        const intervalSecondsDisplay = this.REMINDER_INTERVAL_MS / 1000;
 
         let timeText = '';
         if (intervalMinutes > 0 && (intervalSecondsDisplay % 60 !== 0)) {
@@ -46,56 +142,68 @@ export default class BreakReminderExtension extends Extension {
             timeText = `${intervalSecondsDisplay}s`;
         }
 
-        // Create notification source if needed
-        if (!this.notificationSource) {
-            this.notificationSource = new MessageTray.Source({
-                title: 'Break Reminder',
-                icon_name: 'figure-walking-symbolic'
-            });
-            Main.messageTray.add(this.notificationSource);
+        // Destroy existing source if present (this was the Type Error fix)
+        if (this.notificationSource) {
+            console.log('Break reminder: Destroying existing notification source.');
+            this.notificationSource.destroy();
+            this.notificationSource = null;
         }
+
+        // Always create a fresh notification source
+        this.notificationSource = new MessageTray.Source({
+            title: 'Break Reminder',
+            icon_name: 'daytime-sunrise-symbolic'
+        });
+        Main.messageTray.add(this.notificationSource);
 
         let notificationTitle;
         let notificationBody;
+        const currentTime = new Date().toLocaleTimeString();
 
         if (this.isSnoozing) {
             notificationTitle = '⏰ Snooze Over - Time to Move!';
-            notificationBody = 'Your 5-minute snooze is up. Time to stretch, walk around, or do some quick exercises! 💪';
+            notificationBody = `Your 5-minute snooze is up at ${currentTime}. Time to stretch, walk around, or do some quick exercises! 💪`;
             this.isSnoozing = false; // Reset snooze state after the notification
-            console.log('Break reminder: Snooze over notification shown.');
+            
+            // --- RESET FOR NEXT CYCLE HERE (AFTER SNOOZE) ---
+            this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000; 
+            console.log('Break reminder: Snooze over notification shown. Timer reset to full interval.');
         } else {
             notificationTitle = '🏃 Time for a Movement Break!';
-            notificationBody = `It's been ${timeText}. Time to stretch, walk around, or do some quick exercises! 💪`;
-            console.log(`Break reminder: Regular notification shown after ${timeText}.`);
+            notificationBody = `It's been ${timeText} at ${currentTime}. Time to stretch, walk around, or do some quick exercises! 💪`;
+            
+            // --- RESET FOR NEXT CYCLE HERE (AFTER REGULAR INTERVAL) ---
+            this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
+            console.log(`Break reminder: Regular notification shown after ${timeText}. Timer reset to full interval.`);
         }
 
-        // Create notification with action button
         const notification = new MessageTray.Notification({
             source: this.notificationSource,
             title: notificationTitle,
             body: notificationBody,
-            urgency: MessageTray.Urgency.HIGH
+            urgency: MessageTray.Urgency.HIGH,
+            isTransient: true  // This makes the notification disappear automatically
         });
 
-        // Add the "Wait 5 minutes" action button
         notification.addAction('Wait 5 minutes', () => {
             this._waitFiveMinutes();
-            // Close the current notification after snooze is activated
-            notification.destroy(); 
+            notification.destroy(); // Close the current notification after snooze is activated
         });
 
-        // Show the notification with the action button
         this.notificationSource.addNotification(notification);
 
-        // Crucial: After ANY notification (regular or snooze-over), reset the countdown
-        // to the full main interval for the *next* cycle.
-        this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
-        
-        // Force update display immediately to show the new full countdown
-        this._updateCountdownDisplay();
-        
-        console.log(`Next reminder scheduled in ${this.remainingSeconds} seconds (full interval).`);
+        // Auto-dismiss the notification after 10 seconds if not interacted with
+        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
+            if (notification && !notification._destroyed) {
+                notification.destroy();
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+
+        // The remainingSeconds is now set within the if/else blocks above.
+        console.log(`Notification shown. Next cycle will start from ${this.remainingSeconds} seconds.`);
     }
+
 
     /**
      * Snooze function: sets the remaining time to 5 minutes and sets snooze flag.
@@ -110,15 +218,24 @@ export default class BreakReminderExtension extends Extension {
         // Update display immediately to reflect snooze countdown
         this._updateCountdownDisplay();
         
-        // Show confirmation notification
+        // Show confirmation notification - also transient
         if (this.notificationSource) {
             const confirmNotification = new MessageTray.Notification({
                 source: this.notificationSource,
                 title: '⏰ Break Reminder Snoozed',
-                body: 'You\'ll be reminded again in 5 minutes.',
-                urgency: MessageTray.Urgency.NORMAL
+                body: `You'll be reminded again in 5 minutes. (${new Date().toLocaleTimeString()})`,
+                urgency: MessageTray.Urgency.NORMAL,
+                isTransient: true  // Make snooze confirmation also disappear
             });
             this.notificationSource.addNotification(confirmNotification);
+            
+            // Auto-dismiss snooze confirmation after 3 seconds
+            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 3, () => {
+                if (confirmNotification && !confirmNotification._destroyed) {
+                    confirmNotification.destroy();
+                }
+                return GLib.SOURCE_REMOVE;
+            });
         }
     }
 
@@ -135,9 +252,10 @@ export default class BreakReminderExtension extends Extension {
             this.panelText.set_text(`${minutes}m ${seconds}s`);
         } else if (minutes > 0) {
             this.panelText.set_text(`${minutes}m`);
-        } else {
+        } else if (seconds >= 0) { // Ensure it shows 0s if it hits exactly 0
             this.panelText.set_text(`${seconds}s`);
         }
+        // If remainingSeconds becomes negative for some reason, it will show as 0s or negative seconds, which is fine
     }
 
     /**
@@ -145,20 +263,25 @@ export default class BreakReminderExtension extends Extension {
      * It decrements remainingSeconds and triggers notification when it hits zero.
      */
     _updateCountdown() {
+        console.log(`_updateCountdown called. isRunning: ${this.isRunning}, remainingSeconds (before decrement): ${this.remainingSeconds}`);
         if (!this.isRunning) {
-            return GLib.SOURCE_REMOVE; // Stop the timer if not running
+            console.log("Break reminder: Timer stopping, isRunning is false.");
+            return GLib.SOURCE_REMOVE;
         }
 
-        if (this.remainingSeconds > 0) {
-            this.remainingSeconds--;
-            this._updateCountdownDisplay();
-            return GLib.SOURCE_CONTINUE; // Continue running
-        } else {
-            // remainingSeconds has reached 0. Time to show a notification.
+        this.remainingSeconds--;
+        console.log(`_updateCountdown: remainingSeconds (after decrement): ${this.remainingSeconds}`);
+        
+        if (this.remainingSeconds <= 0) {
+            console.log("Break reminder: remainingSeconds hit 0, showing notification.");
             this._showBreakNotification(); 
-            // _showBreakNotification will handle resetting this.remainingSeconds.
-            return GLib.SOURCE_CONTINUE; // Keep the timer running for the next cycle
+            // remainingSeconds is now reset within _showBreakNotification or _waitFiveMinutes
+            console.log(`_updateCountdown: Notification shown, remainingSeconds now (after _showBreakNotification): ${this.remainingSeconds}`);
         }
+        // Always update display
+        this._updateCountdownDisplay();
+        console.log("Break reminder: _updateCountdown returning GLib.SOURCE_CONTINUE.");
+        return GLib.SOURCE_CONTINUE;
     }
 
     /**
@@ -178,6 +301,7 @@ export default class BreakReminderExtension extends Extension {
             // When starting, always begin from the full reminder interval
             this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
             this.isSnoozing = false; // Ensure snooze flag is false when starting normally
+            this.lastUpdateTime = Date.now(); // Initialize time tracking for _onSystemSleep/_onSystemResume
             
             console.log(`Starting break reminder timer: Initial countdown ${this.remainingSeconds} seconds.`);
             
@@ -204,6 +328,7 @@ export default class BreakReminderExtension extends Extension {
                 this.countdownTimerId = null;
             }
             this.isSnoozing = false; // Reset snooze flag when paused
+            this.lastUpdateTime = 0; // Reset time tracking
 
             // Update panel visuals for paused state
             if (this.panelButton && this.panelText) {
@@ -239,11 +364,9 @@ export default class BreakReminderExtension extends Extension {
                 // Start new timer with the full new interval
                 this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
                 this.isSnoozing = false; // Ensure snooze flag is false when settings change and restarting
-                this.countdownTimerId = GLib.timeout_add_seconds(
-                    GLib.PRIORITY_DEFAULT,
-                    1,
-                    () => this._updateCountdown()
-                );
+                this.lastUpdateTime = Date.now(); // Reset time tracking
+                // Call _restartTimer to manage the GLib.timeout_add_seconds call
+                this._restartTimer(); 
                 
                 this._updateCountdownDisplay(); // Update panel display immediately
             } else {
@@ -269,6 +392,7 @@ export default class BreakReminderExtension extends Extension {
      * Initializes the panel button with icon, text, and menu items.
      */
     _initPanelButton() {
+        // Use a specific position to maintain panel location
         this.panelButton = new PanelMenu.Button(0.0, this.metadata.name, false);
 
         const box = new St.BoxLayout({
@@ -276,7 +400,7 @@ export default class BreakReminderExtension extends Extension {
         });
 
         this.panelIcon = new St.Icon({
-            icon_name: 'alarm-symbolic', // Timer/alarm icon
+            icon_name: 'daytime-sunrise-symbolic', // Timer/alarm icon
             fallback_icon_name: 'appointment-soon-symbolic',
             style_class: 'break-reminder-icon',
             icon_size: 16
@@ -345,9 +469,12 @@ export default class BreakReminderExtension extends Extension {
         const seconds = this._settings.get_int('interval-seconds'); // Retrieve seconds from settings
         this.REMINDER_INTERVAL_MS = (minutes * 60 + seconds) * 1000;
 
-        // Initialize and add panel button
+        // Initialize sleep detection
+        this._initSleepDetection();
+
+        // Initialize and add panel button with consistent positioning
         this._initPanelButton();
-        Main.panel.addToStatusArea(this.metadata.uuid, this.panelButton);
+        Main.panel.addToStatusArea(this.metadata.uuid, this.panelButton, 0, 'right');
 
         // Connect to settings changes
         this._settingsChangedId = this._settings.connect('changed', 
@@ -365,6 +492,20 @@ export default class BreakReminderExtension extends Extension {
         console.log(`Disabling Break Reminder Extension ${this.metadata.uuid}`);
         this.isRunning = false; // Mark as not running
 
+        // Clean up sleep detection (already improved this part in previous suggestion)
+        if (this._prepareForSleepId && this._loginManager) {
+            try {
+                // If this._loginManager holds the actual proxy instance:
+                // this._loginManager.disconnect(this._prepareForSleepId);
+                // Otherwise, just nulling out the ID for cleanup is sufficient if the proxy gets garbage collected
+                // and its signals disconnected when its last reference is gone.
+            } catch (error) {
+                console.log('Break reminder: Error cleaning up sleep detection:', error);
+            }
+        }
+        this._loginManager = null; // Clear proxy reference
+        this._prepareForSleepId = null; // Clear signal ID
+
         // Clean up timers
         if (this.countdownTimerId) {
             GLib.source_remove(this.countdownTimerId);
@@ -373,8 +514,11 @@ export default class BreakReminderExtension extends Extension {
 
         // Clean up notification source
         if (this.notificationSource) {
-            Main.messageTray.remove(this.notificationSource);
+            console.log('Break reminder: Disabling - Destroying notification source.');
+            // --- FIX STARTS HERE ---
+            // Main.messageTray.remove(this.notificationSource); // REMOVE THIS LINE
             this.notificationSource.destroy();
+            // --- FIX ENDS HERE ---
             this.notificationSource = null;
         }
 
@@ -396,5 +540,6 @@ export default class BreakReminderExtension extends Extension {
         this._settings = null;
         this.remainingSeconds = 0;
         this.isSnoozing = false; // Reset snooze state on disable
+        this.lastUpdateTime = 0;
     }
 }
