@@ -29,10 +29,21 @@ export default class BreakReminderExtension extends Extension {
     }
 
     /**
- * Shows a break notification to the user with wait option
- */
+     * Shows a break notification to the user with wait option
+     */
     _showBreakNotification() {
-        const intervalMinutes = Math.round(this.REMINDER_INTERVAL_MS / 60 / 1000);
+        const totalSeconds = this.REMINDER_INTERVAL_MS / 1000;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        
+        let timeText = '';
+        if (minutes > 0 && seconds > 0) {
+            timeText = `${minutes}m ${seconds}s`;
+        } else if (minutes > 0) {
+            timeText = `${minutes}m`;
+        } else {
+            timeText = `${seconds}s`;
+        }
         
         // Create notification source if needed
         if (!this.notificationSource) {
@@ -49,7 +60,7 @@ export default class BreakReminderExtension extends Extension {
         const notification = new MessageTray.Notification({
             source: this.notificationSource,
             title: '🏃 Time for a Movement Break!',
-            body: `It's been ${intervalMinutes} minutes. Time to stretch, walk around, or do some quick exercises! 💪`,
+            body: `It's been ${timeText}. Time to stretch, walk around, or do some quick exercises! 💪`,
             urgency: MessageTray.Urgency.HIGH
         });
 
@@ -70,6 +81,7 @@ export default class BreakReminderExtension extends Extension {
         // Log for debugging
         console.log(`Break reminder: Reset timer to ${this.remainingSeconds} seconds`);
     }
+
     /**
      * Wait 5 minutes before next reminder
      */
@@ -82,8 +94,16 @@ export default class BreakReminderExtension extends Extension {
         // Update display
         this._updateCountdownDisplay();
         
-        // Show confirmation
-        Main.notify('⏰ Break Reminder', 'You\'ll be reminded again in 5 minutes.');
+        // Show confirmation notification
+        if (this.notificationSource) {
+            const confirmNotification = new MessageTray.Notification({
+                source: this.notificationSource,
+                title: '⏰ Break Reminder Snoozed',
+                body: 'You\'ll be reminded again in 5 minutes.',
+                urgency: MessageTray.Urgency.NORMAL
+            });
+            this.notificationSource.addNotification(confirmNotification);
+        }
     }
 
     /**
@@ -95,7 +115,9 @@ export default class BreakReminderExtension extends Extension {
         const minutes = Math.floor(this.remainingSeconds / 60);
         const seconds = this.remainingSeconds % 60;
         
-        if (minutes > 0) {
+        if (minutes > 0 && seconds > 0) {
+            this.panelText.set_text(`${minutes}m ${seconds}s`);
+        } else if (minutes > 0) {
             this.panelText.set_text(`${minutes}m`);
         } else {
             this.panelText.set_text(`${seconds}s`);
@@ -117,67 +139,8 @@ export default class BreakReminderExtension extends Extension {
         } else {
             // Time's up! Show notification and reset
             this._showBreakNotification();
-            // Reset for next cycle - this happens in _showBreakNotification()
+            // Reset happens in _showBreakNotification()
             return GLib.SOURCE_CONTINUE; // Continue the timer for next cycle
-        }
-    }
-
-    /**
-     * Toggles the periodic reminder on/off
-     */
-    _togglePeriodicReminder() {
-        this.isRunning = !this.isRunning;
-
-        if (this.isRunning) {
-            // Clean up any existing timers
-            if (this.timerId) {
-                GLib.source_remove(this.timerId);
-                this.timerId = null;
-            }
-            if (this.countdownTimerId) {
-                GLib.source_remove(this.countdownTimerId);
-                this.countdownTimerId = null;
-            }
-            
-            // Start with full countdown
-            this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
-            
-            // Log for debugging
-            console.log(`Starting break reminder timer: ${this.remainingSeconds} seconds`);
-            
-            // Start single countdown timer that handles both countdown and notifications
-            this.countdownTimerId = GLib.timeout_add_seconds(
-                GLib.PRIORITY_DEFAULT,
-                1,
-                () => this._updateCountdown()
-            );
-
-            // Update panel appearance - running state
-            if (this.panelButton && this.panelText) {
-                this.panelButton.add_style_class_name('break-reminder-active');
-                this.panelButton.remove_style_class_name('break-reminder-paused');
-                this._updateCountdownDisplay();
-            }
-        } else {
-            // Stop the reminder
-            console.log('Pausing break reminder timer');
-            
-            if (this.timerId) {
-                GLib.source_remove(this.timerId);
-                this.timerId = null;
-            }
-
-            if (this.countdownTimerId) {
-                GLib.source_remove(this.countdownTimerId);
-                this.countdownTimerId = null;
-            }
-
-            // Update panel appearance - paused state
-            if (this.panelButton && this.panelText) {
-                this.panelButton.add_style_class_name('break-reminder-paused');
-                this.panelButton.remove_style_class_name('break-reminder-active');
-                this.panelText.set_text('Paused');
-            }
         }
     }
 
@@ -185,9 +148,10 @@ export default class BreakReminderExtension extends Extension {
      * Handles settings changes
      */
     _onSettingsChanged(settings, key) {
-        if (key === 'interval-minutes') {
-            const newInterval = settings.get_int('interval-minutes');
-            this.REMINDER_INTERVAL_MS = newInterval * 60 * 1000;
+        if (key === 'interval-minutes' || key === 'interval-seconds') {
+            const minutes = settings.get_int('interval-minutes');
+            const seconds = settings.get_int('interval-seconds');
+            this.REMINDER_INTERVAL_MS = (minutes * 60 + seconds) * 1000;
 
             // Restart timer if running
             if (this.isRunning) {
@@ -234,9 +198,22 @@ export default class BreakReminderExtension extends Extension {
             icon_size: 16
         });
 
-        // Create text label
+        // Create text label with initial display based on settings
+        const totalSeconds = this.REMINDER_INTERVAL_MS / 1000;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        
+        let initialText = '';
+        if (minutes > 0 && seconds > 0) {
+            initialText = `${minutes}m ${seconds}s`;
+        } else if (minutes > 0) {
+            initialText = `${minutes}m`;
+        } else {
+            initialText = `${seconds}s`;
+        }
+
         this.panelText = new St.Label({
-            text: '15m',
+            text: initialText,
             y_align: Clutter.ActorAlign.CENTER,
             style_class: 'break-reminder-label'
         });
@@ -285,7 +262,9 @@ export default class BreakReminderExtension extends Extension {
     enable() {
         // Initialize settings
         this._settings = this.getSettings();
-        this.REMINDER_INTERVAL_MS = this._settings.get_int('interval-minutes') * 60 * 1000;
+        const minutes = this._settings.get_int('interval-minutes');
+        const seconds = this._settings.get_int('interval-seconds');
+        this.REMINDER_INTERVAL_MS = (minutes * 60 + seconds) * 1000;
 
         // Initialize panel button
         this._initPanelButton();
@@ -293,8 +272,8 @@ export default class BreakReminderExtension extends Extension {
         // Add to panel
         Main.panel.addToStatusArea(this.metadata.uuid, this.panelButton);
 
-        // Connect settings change handler
-        this._settingsChangedId = this._settings.connect('changed::interval-minutes', 
+        // Connect settings change handlers for both minutes and seconds
+        this._settingsChangedId = this._settings.connect('changed', 
             (settings, key) => this._onSettingsChanged(settings, key));
 
         // Auto-start reminders immediately on login
