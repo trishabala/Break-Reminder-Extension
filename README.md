@@ -6,12 +6,12 @@ A GNOME Shell extension that gently reminds you to take movement breaks and stay
 
 ## Features
 
--🏃 **Automatic Reminders** - Get gentle notifications to move, stretch, or exercise
--⏰ **Live Countdown Timer** - See exactly when your next break is due right in the panel  
--⚙️ **Customizable Intervals** - Set reminder frequency from 1 to 240 minutes
--🎮 **Simple Controls** - Easy pause/resume functionality via panel menu
--🎨 **Clean Interface** - Minimal design that doesn't clutter your workspace
--🚀 **Auto-Start** - Begins working immediately when you log in
+- 🏃 **Automatic Reminders** - Get gentle notifications to move, stretch, or exercise
+- ⏰ **Live Countdown Timer** - See exactly when your next break is due right in the panel  
+- ⚙️ **Customizable Intervals** - Set reminder frequency from 1 to 240 minutes
+- 🎮 **Simple Controls** - Easy pause/resume functionality via panel menu
+- 🎨 **Clean Interface** - Minimal design that doesn't clutter your workspace
+- 🚀 **Auto-Start** - Begins working immediately when you log in
 
 ## Installation
 
