@@ -21,20 +21,20 @@ A GNOME Shell extension that gently reminds you to take movement breaks and stay
 3. Click the toggle to install and enable
 
 ### Manual Installation
-1. Download the latest release from [GitHub Releases](https://github.com/yourusername/break-reminder-extension/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/trishabala/break-reminder-extension/releases)
 2. Extract the ZIP file to `~/.local/share/gnome-shell/extensions/`
 3. Restart GNOME Shell (`Alt+F2`, type `r`, press Enter)
 4. Enable the extension:
    ```bash
-   gnome-extensions enable break-reminder@yourdomain.com
+   gnome-extensions enable break-reminder@trishabala.github.com
    ```
 
 ### From Source
 ```bash
-git clone https://github.com/yourusername/break-reminder-extension.git
+git clone https://github.com/trishabala/break-reminder-extension.git
 cd break-reminder-extension
-cp -r break-reminder@yourdomain.com ~/.local/share/gnome-shell/extensions/
-gnome-extensions enable break-reminder@yourdomain.com
+cp -r break-reminder@trishabala.github.com ~/.local/share/gnome-shell/extensions/
+gnome-extensions enable break-reminder@trishabala.github.com
 ```
 
 ## Usage
@@ -95,7 +95,7 @@ Regular movement breaks can help:
 ### Building from Source
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/break-reminder-extension.git
+git clone https://github.com/trishabala/break-reminder-extension.git
 cd break-reminder-extension
 
 # Install to local extensions directory
@@ -110,7 +110,7 @@ make logs
 
 ### Project Structure
 ```
-break-reminder@yourdomain.com/
+break-reminder@trishabal.github.com/
 ├── extension.js          # Main extension logic
 ├── prefs.js             # Settings/preferences UI
 ├── metadata.json        # Extension metadata
@@ -213,8 +213,7 @@ This project is licensed under the GPL v3 License - see the [LICENSE](LICENSE) f
 
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/trishabala/break-reminder-extension/issues)
 - 💡 **Feature Requests**: [GitHub Discussions](https://github.com/trishabala/break-reminder-extension/discussions)
-- 📧 **Email**: your.email@domain.com
-- 💬 **Matrix**: #break-reminder:matrix.org
+- 📧 **Email**: trisha4bala@gmail.com
 
 ## Acknowledgments
 
@@ -224,7 +223,5 @@ This project is licensed under the GPL v3 License - see the [LICENSE](LICENSE) f
 - Health tips from ergonomics research
 
 ---
-
-⭐ **Like this extension?** Please star the repository and consider [buying me a coffee](https://buymeacoffee.com/yourusername)!
 
 **Stay healthy, stay productive!** 🏃‍♀️💪
