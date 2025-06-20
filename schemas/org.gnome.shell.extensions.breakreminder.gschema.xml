@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.breakreminder" path="/org/gnome/shell/extensions/breakreminder/">
+    <key name="interval-minutes" type="i">
+      <default>15</default>
+      <range min="1" max="240"/>
+      <summary>Break reminder interval in minutes</summary>
+      <description>The interval in minutes after which a break reminder notification will be displayed. Range: 1-240 minutes.</description>
+    </key>
+  </schema>
+</schemalist>
