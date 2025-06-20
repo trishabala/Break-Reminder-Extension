@@ -2,7 +2,7 @@
 
 A GNOME Shell extension that gently reminds you to take movement breaks and stay healthy throughout your workday. Features a countdown timer in your panel and customizable reminder intervals.
 
-![Extension Screenshot](screenshots/panel-view.png)
+![Extension Screenshot](screenshots/panel.png)
 
 ## Features
 
