@@ -21,38 +21,69 @@ export default class BreakReminderExtension extends Extension {
         this.source = null;
         this.panelButton = null;
         this.panelText = null;
+        this.panelIcon = null;
         this._settingsChangedId = null;
         this.REMINDER_INTERVAL_MS = 15 * 60 * 1000; // Default 15 minutes
         this.remainingSeconds = 0;
+        this.notificationSource = null;
     }
 
     /**
-     * Shows a break notification to the user
-     */
+ * Shows a break notification to the user with wait option
+ */
     _showBreakNotification() {
-        // Create notification source if it doesn't exist
-        if (!this.source) {
-            this.source = new MessageTray.Source({
+        const intervalMinutes = Math.round(this.REMINDER_INTERVAL_MS / 60 / 1000);
+        
+        // Create notification source if needed
+        if (!this.notificationSource) {
+            this.notificationSource = new MessageTray.Source({
                 title: 'Movement Break Reminder',
                 iconName: 'figure-walking-symbolic'
             });
-            Main.messageTray.addSource(this.source);
+            
+            // Add the source to the message tray
+            Main.messageTray.add(this.notificationSource);
         }
 
-        const intervalMinutes = Math.round(this.REMINDER_INTERVAL_MS / 60 / 1000);
-        
+        // Create notification with action button
         const notification = new MessageTray.Notification({
-            source: this.source,
+            source: this.notificationSource,
             title: '🏃 Time for a Movement Break!',
             body: `It's been ${intervalMinutes} minutes. Time to stretch, walk around, or do some quick exercises! 💪`,
             urgency: MessageTray.Urgency.HIGH
         });
 
-        this.source.addNotification(notification);
+        // Add the "Wait 5 minutes" action button
+        notification.addAction('Wait 5 minutes', () => {
+            this._waitFiveMinutes();
+        });
+
+        // Show the notification with the action button
+        this.notificationSource.addNotification(notification);
 
         // Reset the countdown for next cycle
         this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
+        
+        // Force update display immediately
         this._updateCountdownDisplay();
+        
+        // Log for debugging
+        console.log(`Break reminder: Reset timer to ${this.remainingSeconds} seconds`);
+    }
+    /**
+     * Wait 5 minutes before next reminder
+     */
+    _waitFiveMinutes() {
+        console.log('User chose to wait 5 minutes');
+        
+        // Set remaining time to 5 minutes
+        this.remainingSeconds = 5 * 60;
+        
+        // Update display
+        this._updateCountdownDisplay();
+        
+        // Show confirmation
+        Main.notify('⏰ Break Reminder', 'You\'ll be reminded again in 5 minutes.');
     }
 
     /**
@@ -75,6 +106,10 @@ export default class BreakReminderExtension extends Extension {
      * Countdown timer that updates every second and handles notifications
      */
     _updateCountdown() {
+        if (!this.isRunning) {
+            return GLib.SOURCE_REMOVE;
+        }
+
         if (this.remainingSeconds > 0) {
             this.remainingSeconds--;
             this._updateCountdownDisplay();
@@ -82,6 +117,7 @@ export default class BreakReminderExtension extends Extension {
         } else {
             // Time's up! Show notification and reset
             this._showBreakNotification();
+            // Reset for next cycle - this happens in _showBreakNotification()
             return GLib.SOURCE_CONTINUE; // Continue the timer for next cycle
         }
     }
@@ -106,6 +142,9 @@ export default class BreakReminderExtension extends Extension {
             // Start with full countdown
             this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
             
+            // Log for debugging
+            console.log(`Starting break reminder timer: ${this.remainingSeconds} seconds`);
+            
             // Start single countdown timer that handles both countdown and notifications
             this.countdownTimerId = GLib.timeout_add_seconds(
                 GLib.PRIORITY_DEFAULT,
@@ -121,6 +160,8 @@ export default class BreakReminderExtension extends Extension {
             }
         } else {
             // Stop the reminder
+            console.log('Pausing break reminder timer');
+            
             if (this.timerId) {
                 GLib.source_remove(this.timerId);
                 this.timerId = null;
@@ -185,10 +226,10 @@ export default class BreakReminderExtension extends Extension {
             style_class: 'break-reminder-box'
         });
 
-        // Create cute movement/exercise icon - changed from gears to a timer/clock icon
+        // Create timer icon
         this.panelIcon = new St.Icon({
             icon_name: 'alarm-symbolic',
-            fallback_icon_name: 'appointment-soon-symbolic', // Fallback to appointment icon
+            fallback_icon_name: 'appointment-soon-symbolic',
             style_class: 'break-reminder-icon',
             icon_size: 16
         });
@@ -206,7 +247,7 @@ export default class BreakReminderExtension extends Extension {
         // Add the box to the button
         this.panelButton.add_child(box);
 
-        // Create menu items - only toggle button, no settings button
+        // Create menu items - only toggle and settings
         this.toggleItem = new St.Button({
             label: 'Pause Reminders', // Start with pause since auto-start is enabled
             style_class: 'break-reminder-menu-button',
@@ -223,7 +264,7 @@ export default class BreakReminderExtension extends Extension {
 
         this.panelButton.menu.box.add_child(this.toggleItem);
 
-        // Add simple settings button
+        // Add settings button
         const settingsItem = new St.Button({
             label: 'Settings',
             style_class: 'break-reminder-menu-button',
@@ -273,9 +314,11 @@ export default class BreakReminderExtension extends Extension {
         }
 
         // Clean up notification source
-        if (this.source) {
-            this.source.destroy();
-            this.source = null;
+        if (this.notificationSource) {
+            // Remove from message tray first
+            Main.messageTray.remove(this.notificationSource);
+            this.notificationSource.destroy();
+            this.notificationSource = null;
         }
 
         // Clean up panel button
@@ -292,6 +335,7 @@ export default class BreakReminderExtension extends Extension {
 
         // Clear references
         this.panelText = null;
+        this.panelIcon = null;
         this._settings = null;
         this.isRunning = false;
         this.remainingSeconds = 0;
