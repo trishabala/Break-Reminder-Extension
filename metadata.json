@@ -8,7 +8,7 @@
     "47",
     "48"
   ],
-  "version": 1,
+  "version": 2,
   "url": "https://github.com/trishabala/break-reminder-extension",
   "settings-schema": "org.gnome.shell.extensions.breakreminder"
 }

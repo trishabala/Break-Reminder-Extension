@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.break-reminder" path="/org/gnome/shell/extensions/break-reminder/">
+  <schema id="org.gnome.shell.extensions.breakreminder" path="/org/gnome/shell/extensions/breakreminder/">
     <key name="interval-minutes" type="i">
       <default>15</default>
       <summary>Break reminder interval in minutes</summary>

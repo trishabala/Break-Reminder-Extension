@@ -1,122 +1,118 @@
-// prefs.js
+// prefs.js - Settings UI for Break Reminder Extension
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
+import Gio from 'gi://Gio'; // Required for settings binding
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 export default class BreakReminderPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
-        // Get settings
         const settings = this.getSettings();
 
         // Create preferences page
         const page = new Adw.PreferencesPage({
-            title: 'General',
-            icon_name: 'dialog-information-symbolic',
+            title: 'Break Reminder Settings', // More descriptive title
+            icon_name: 'view-refresh-symbolic' // Refresh icon suggests movement/activity
         });
         window.add(page);
 
-        // Create timing group
-        const timingGroup = new Adw.PreferencesGroup({
-            title: 'Break Reminder Timing',
-            description: 'Configure how often you want to be reminded to take breaks',
+        // Create preferences group
+        const group = new Adw.PreferencesGroup({
+            title: 'Movement Break Timing', // Combined title for both minutes and seconds
+            description: 'Configure how often you want to be reminded to take movement breaks.'
         });
-        page.add(timingGroup);
+        page.add(group);
 
-        // Minutes row
+        // --- Minutes Interval Setting ---
         const minutesRow = new Adw.ActionRow({
             title: 'Minutes',
-            subtitle: 'Break reminder interval in minutes',
+            subtitle: 'Set the main interval in minutes.',
         });
 
         const minutesSpinButton = new Gtk.SpinButton({
             adjustment: new Gtk.Adjustment({
-                lower: 0,
-                upper: 120,
+                lower: 0, // Allow 0 minutes if seconds are used
+                upper: 240, // Up to 4 hours
                 step_increment: 1,
                 page_increment: 5,
-                value: settings.get_int('interval-minutes'),
+                value: settings.get_int('interval-minutes')
             }),
             valign: Gtk.Align.CENTER,
         });
 
-        // Bind settings
+        // Connect the spin button to settings using Gtk.SpinButton's 'value' property
         settings.bind(
             'interval-minutes',
             minutesSpinButton,
             'value',
             Gio.SettingsBindFlags.DEFAULT
         );
-
         minutesRow.add_suffix(minutesSpinButton);
-        timingGroup.add(minutesRow);
+        group.add(minutesRow);
 
-        // Seconds row
+        // --- Seconds Interval Setting ---
         const secondsRow = new Adw.ActionRow({
             title: 'Seconds',
-            subtitle: 'Additional seconds to add to the interval',
+            subtitle: 'Add additional seconds to the interval.',
         });
 
         const secondsSpinButton = new Gtk.SpinButton({
             adjustment: new Gtk.Adjustment({
                 lower: 0,
-                upper: 59,
+                upper: 59, // Max 59 seconds
                 step_increment: 1,
                 page_increment: 5,
-                value: settings.get_int('interval-seconds'),
+                value: settings.get_int('interval-seconds')
             }),
             valign: Gtk.Align.CENTER,
         });
 
-        // Bind settings
+        // Connect the spin button to settings
         settings.bind(
             'interval-seconds',
             secondsSpinButton,
             'value',
             Gio.SettingsBindFlags.DEFAULT
         );
-
         secondsRow.add_suffix(secondsSpinButton);
-        timingGroup.add(secondsRow);
+        group.add(secondsRow);
 
-        // Add example row showing total time
-        const exampleRow = new Adw.ActionRow({
+        // --- Current Total Interval Display ---
+        const totalIntervalRow = new Adw.ActionRow({
             title: 'Current Total Interval',
-            subtitle: this._formatTotalTime(settings.get_int('interval-minutes'), settings.get_int('interval-seconds')),
+            subtitle: this._formatTotalTime(
+                settings.get_int('interval-minutes'),
+                settings.get_int('interval-seconds')
+            ),
         });
-        timingGroup.add(exampleRow);
+        group.add(totalIntervalRow);
 
-        // Update example when settings change
-        const updateExample = () => {
+        // Update the total interval display when minutes or seconds change
+        const updateDisplay = () => {
             const minutes = settings.get_int('interval-minutes');
             const seconds = settings.get_int('interval-seconds');
-            exampleRow.subtitle = this._formatTotalTime(minutes, seconds);
+            totalIntervalRow.subtitle = this._formatTotalTime(minutes, seconds);
         };
 
-        settings.connect('changed::interval-minutes', updateExample);
-        settings.connect('changed::interval-seconds', updateExample);
+        settings.connect('changed::interval-minutes', updateDisplay);
+        settings.connect('changed::interval-seconds', updateDisplay);
 
-        // Add info group
-        const infoGroup = new Adw.PreferencesGroup({
-            title: 'About',
+        // --- General Info Row (from original file) ---
+        const infoRow = new Adw.ActionRow({
+            title: 'Stay Active & Healthy! 💪',
+            subtitle: 'The extension will remind you to move, stretch, or do quick exercises at regular intervals. Click the timer icon in the panel to start/pause reminders.',
         });
-        page.add(infoGroup);
-
-        const aboutRow = new Adw.ActionRow({
-            title: 'Break Reminder Extension',
-            subtitle: 'Helps you remember to take regular movement breaks for better health and productivity.',
-        });
-        infoGroup.add(aboutRow);
-
-        const featuresRow = new Adw.ActionRow({
-            title: 'Features',
-            subtitle: '• Customizable reminder intervals\n• Snooze functionality (5 minutes)\n• Panel countdown display\n• Auto-start on login',
-        });
-        infoGroup.add(featuresRow);
+        group.add(infoRow);
     }
 
+    /**
+     * Helper function to format the total time for display.
+     * @param {number} minutes
+     * @param {number} seconds
+     * @returns {string} Formatted string like "15 minutes and 30 seconds"
+     */
     _formatTotalTime(minutes, seconds) {
         if (minutes === 0 && seconds === 0) {
-            return 'Timer disabled (0 seconds)';
+            return 'Reminder interval is set to 0. Reminders will not trigger.';
         }
         
         let parts = [];
@@ -127,6 +123,6 @@ export default class BreakReminderPreferences extends ExtensionPreferences {
             parts.push(`${seconds} second${seconds !== 1 ? 's' : ''}`);
         }
         
-        return parts.join(' and ');
+        return `Current interval: ${parts.join(' and ')}.`;
     }
 }

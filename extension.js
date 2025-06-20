@@ -16,82 +16,98 @@ export default class BreakReminderExtension extends Extension {
         super(metadata);
         this._settings = null;
         this.isRunning = false;
-        this.timerId = null;
         this.countdownTimerId = null;
-        this.source = null;
         this.panelButton = null;
         this.panelText = null;
         this.panelIcon = null;
         this._settingsChangedId = null;
-        this.REMINDER_INTERVAL_MS = 15 * 60 * 1000; // Default 15 minutes
-        this.remainingSeconds = 0;
+        this.REMINDER_INTERVAL_MS = 15 * 60 * 1000; // Default 15 minutes, updated by settings
+        this.remainingSeconds = 0; // The current countdown value
         this.notificationSource = null;
+        this.isSnoozing = false; // New state variable to track snooze
     }
 
     /**
-     * Shows a break notification to the user with wait option
+     * Shows a break notification to the user with a snooze option.
+     * The notification content changes based on whether it's a regular reminder or after a snooze.
      */
     _showBreakNotification() {
-        const totalSeconds = this.REMINDER_INTERVAL_MS / 1000;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        
+        // Calculate the actual interval that just passed to use in the notification body
+        // This is based on the REMINDER_INTERVAL_MS, not the remainingSeconds
+        const intervalMinutes = Math.round(this.REMINDER_INTERVAL_MS / 60 / 1000);
+        const intervalSecondsDisplay = this.REMINDER_INTERVAL_MS / 1000; // Total seconds for display
+
         let timeText = '';
-        if (minutes > 0 && seconds > 0) {
-            timeText = `${minutes}m ${seconds}s`;
-        } else if (minutes > 0) {
-            timeText = `${minutes}m`;
+        if (intervalMinutes > 0 && (intervalSecondsDisplay % 60 !== 0)) {
+            timeText = `${intervalMinutes}m ${intervalSecondsDisplay % 60}s`;
+        } else if (intervalMinutes > 0) {
+            timeText = `${intervalMinutes}m`;
         } else {
-            timeText = `${seconds}s`;
+            timeText = `${intervalSecondsDisplay}s`;
         }
-        
+
         // Create notification source if needed
         if (!this.notificationSource) {
             this.notificationSource = new MessageTray.Source({
-                title: 'Movement Break Reminder',
-                iconName: 'figure-walking-symbolic'
+                title: 'Break Reminder',
+                icon_name: 'figure-walking-symbolic'
             });
-            
-            // Add the source to the message tray
             Main.messageTray.add(this.notificationSource);
+        }
+
+        let notificationTitle;
+        let notificationBody;
+
+        if (this.isSnoozing) {
+            notificationTitle = '⏰ Snooze Over - Time to Move!';
+            notificationBody = 'Your 5-minute snooze is up. Time to stretch, walk around, or do some quick exercises! 💪';
+            this.isSnoozing = false; // Reset snooze state after the notification
+            console.log('Break reminder: Snooze over notification shown.');
+        } else {
+            notificationTitle = '🏃 Time for a Movement Break!';
+            notificationBody = `It's been ${timeText}. Time to stretch, walk around, or do some quick exercises! 💪`;
+            console.log(`Break reminder: Regular notification shown after ${timeText}.`);
         }
 
         // Create notification with action button
         const notification = new MessageTray.Notification({
             source: this.notificationSource,
-            title: '🏃 Time for a Movement Break!',
-            body: `It's been ${timeText}. Time to stretch, walk around, or do some quick exercises! 💪`,
+            title: notificationTitle,
+            body: notificationBody,
             urgency: MessageTray.Urgency.HIGH
         });
 
         // Add the "Wait 5 minutes" action button
         notification.addAction('Wait 5 minutes', () => {
             this._waitFiveMinutes();
+            // Close the current notification after snooze is activated
+            notification.destroy(); 
         });
 
         // Show the notification with the action button
         this.notificationSource.addNotification(notification);
 
-        // Reset the countdown for next cycle
+        // Crucial: After ANY notification (regular or snooze-over), reset the countdown
+        // to the full main interval for the *next* cycle.
         this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
         
-        // Force update display immediately
+        // Force update display immediately to show the new full countdown
         this._updateCountdownDisplay();
         
-        // Log for debugging
-        console.log(`Break reminder: Reset timer to ${this.remainingSeconds} seconds`);
+        console.log(`Next reminder scheduled in ${this.remainingSeconds} seconds (full interval).`);
     }
 
     /**
-     * Wait 5 minutes before next reminder
+     * Snooze function: sets the remaining time to 5 minutes and sets snooze flag.
+     * The regular countdown loop will take over from here.
      */
     _waitFiveMinutes() {
-        console.log('User chose to wait 5 minutes');
+        console.log('User chose to wait 5 minutes (snooze activated).');
         
-        // Set remaining time to 5 minutes
-        this.remainingSeconds = 5 * 60;
+        this.isSnoozing = true; // Set snooze flag
+        this.remainingSeconds = 5 * 60; // Set remaining time to 5 minutes
         
-        // Update display
+        // Update display immediately to reflect snooze countdown
         this._updateCountdownDisplay();
         
         // Show confirmation notification
@@ -107,7 +123,7 @@ export default class BreakReminderExtension extends Extension {
     }
 
     /**
-     * Updates the countdown display in the panel
+     * Updates the countdown display in the panel (e.g., "15m 30s" or "30s")
      */
     _updateCountdownDisplay() {
         if (!this.panelText || !this.isRunning) return;
@@ -125,91 +141,159 @@ export default class BreakReminderExtension extends Extension {
     }
 
     /**
-     * Countdown timer that updates every second and handles notifications
+     * The main countdown timer that runs every second.
+     * It decrements remainingSeconds and triggers notification when it hits zero.
      */
     _updateCountdown() {
         if (!this.isRunning) {
-            return GLib.SOURCE_REMOVE;
+            return GLib.SOURCE_REMOVE; // Stop the timer if not running
         }
 
         if (this.remainingSeconds > 0) {
             this.remainingSeconds--;
             this._updateCountdownDisplay();
-            return GLib.SOURCE_CONTINUE;
+            return GLib.SOURCE_CONTINUE; // Continue running
         } else {
-            // Time's up! Show notification and reset
-            this._showBreakNotification();
-            // Reset happens in _showBreakNotification()
-            return GLib.SOURCE_CONTINUE; // Continue the timer for next cycle
+            // remainingSeconds has reached 0. Time to show a notification.
+            this._showBreakNotification(); 
+            // _showBreakNotification will handle resetting this.remainingSeconds.
+            return GLib.SOURCE_CONTINUE; // Keep the timer running for the next cycle
         }
     }
 
     /**
-     * Handles settings changes
+     * Toggles the periodic reminder on/off.
+     * Handles starting and stopping the main countdown timer.
+     */
+    _togglePeriodicReminder() {
+        this.isRunning = !this.isRunning; // Flip the running state
+
+        if (this.isRunning) {
+            // If starting, ensure any old timer is cleared
+            if (this.countdownTimerId) {
+                GLib.source_remove(this.countdownTimerId);
+                this.countdownTimerId = null;
+            }
+            
+            // When starting, always begin from the full reminder interval
+            this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
+            this.isSnoozing = false; // Ensure snooze flag is false when starting normally
+            
+            console.log(`Starting break reminder timer: Initial countdown ${this.remainingSeconds} seconds.`);
+            
+            // Start the single second-interval countdown timer
+            this.countdownTimerId = GLib.timeout_add_seconds(
+                GLib.PRIORITY_DEFAULT,
+                1, // Call _updateCountdown every 1 second
+                () => this._updateCountdown()
+            );
+
+            // Update panel visuals for active state
+            if (this.panelButton && this.panelText) {
+                this.panelButton.add_style_class_name('break-reminder-active');
+                this.panelButton.remove_style_class_name('break-reminder-paused');
+                this._updateCountdownDisplay(); // Update display with initial countdown
+            }
+            this.toggleItem.label = 'Pause Reminders'; // Update menu item label
+        } else {
+            // If pausing, stop the timer
+            console.log('Pausing break reminder timer.');
+            
+            if (this.countdownTimerId) {
+                GLib.source_remove(this.countdownTimerId);
+                this.countdownTimerId = null;
+            }
+            this.isSnoozing = false; // Reset snooze flag when paused
+
+            // Update panel visuals for paused state
+            if (this.panelButton && this.panelText) {
+                this.panelButton.add_style_class_name('break-reminder-paused');
+                this.panelButton.remove_style_class_name('break-reminder-active');
+                this.panelText.set_text('Paused'); // Display 'Paused' text
+            }
+            this.toggleItem.label = 'Start Reminders'; // Update menu item label
+        }
+    }
+
+    /**
+     * Handles changes to extension settings (e.g., interval-minutes, interval-seconds).
+     * Reloads the interval and restarts the timer if it was running.
      */
     _onSettingsChanged(settings, key) {
+        // Only react to changes in interval-minutes or interval-seconds
         if (key === 'interval-minutes' || key === 'interval-seconds') {
             const minutes = settings.get_int('interval-minutes');
-            const seconds = settings.get_int('interval-seconds');
+            const seconds = settings.get_int('interval-seconds'); // Retrieve seconds from settings
             this.REMINDER_INTERVAL_MS = (minutes * 60 + seconds) * 1000;
 
-            // Restart timer if running
+            console.log(`Settings changed: New reminder interval set to ${minutes} minutes, ${seconds} seconds.`);
+
+            // If the timer is currently running, restart it with the new interval
             if (this.isRunning) {
-                // Clean up existing timers
-                if (this.timerId) {
-                    GLib.source_remove(this.timerId);
-                    this.timerId = null;
-                }
+                // Clear existing timer
                 if (this.countdownTimerId) {
                     GLib.source_remove(this.countdownTimerId);
                     this.countdownTimerId = null;
                 }
                 
-                // Start fresh with new interval
+                // Start new timer with the full new interval
                 this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
+                this.isSnoozing = false; // Ensure snooze flag is false when settings change and restarting
                 this.countdownTimerId = GLib.timeout_add_seconds(
                     GLib.PRIORITY_DEFAULT,
                     1,
                     () => this._updateCountdown()
                 );
                 
-                this._updateCountdownDisplay();
+                this._updateCountdownDisplay(); // Update panel display immediately
+            } else {
+                // If paused, update remainingSeconds so that when it's next started,
+                // it begins with the new interval. Also update the displayed text.
+                this.remainingSeconds = this.REMINDER_INTERVAL_MS / 1000;
+                if (this.panelText) { // Ensure panelText exists before trying to update it
+                    const displayMinutes = Math.floor(this.remainingSeconds / 60);
+                    const displaySeconds = this.remainingSeconds % 60;
+                    if (displayMinutes > 0 && displaySeconds > 0) {
+                        this.panelText.set_text(`${displayMinutes}m ${displaySeconds}s`);
+                    } else if (displayMinutes > 0) {
+                        this.panelText.set_text(`${displayMinutes}m`);
+                    } else {
+                        this.panelText.set_text(`${displaySeconds}s`);
+                    }
+                }
             }
         }
     }
 
     /**
-     * Initialize the panel button
+     * Initializes the panel button with icon, text, and menu items.
      */
     _initPanelButton() {
-        // Create panel button
         this.panelButton = new PanelMenu.Button(0.0, this.metadata.name, false);
 
-        // Create a box layout to hold icon and text
         const box = new St.BoxLayout({
             style_class: 'break-reminder-box'
         });
 
-        // Create timer icon
         this.panelIcon = new St.Icon({
-            icon_name: 'alarm-symbolic',
+            icon_name: 'alarm-symbolic', // Timer/alarm icon
             fallback_icon_name: 'appointment-soon-symbolic',
             style_class: 'break-reminder-icon',
             icon_size: 16
         });
 
-        // Create text label with initial display based on settings
-        const totalSeconds = this.REMINDER_INTERVAL_MS / 1000;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
+        // Initial text for the panel based on current settings
+        const initialIntervalSeconds = this.REMINDER_INTERVAL_MS / 1000;
+        const initialMinutes = Math.floor(initialIntervalSeconds / 60);
+        const initialSeconds = initialIntervalSeconds % 60;
         
         let initialText = '';
-        if (minutes > 0 && seconds > 0) {
-            initialText = `${minutes}m ${seconds}s`;
-        } else if (minutes > 0) {
-            initialText = `${minutes}m`;
+        if (initialMinutes > 0 && initialSeconds > 0) {
+            initialText = `${initialMinutes}m ${initialSeconds}s`;
+        } else if (initialMinutes > 0) {
+            initialText = `${initialMinutes}m`;
         } else {
-            initialText = `${seconds}s`;
+            initialText = `${initialSeconds}s`;
         }
 
         this.panelText = new St.Label({
@@ -220,73 +304,68 @@ export default class BreakReminderExtension extends Extension {
 
         box.add_child(this.panelIcon);
         box.add_child(this.panelText);
-
-        // Add the box to the button
         this.panelButton.add_child(box);
 
-        // Create menu items - only toggle and settings
+        // Toggle button in menu
         this.toggleItem = new St.Button({
-            label: 'Pause Reminders', // Start with pause since auto-start is enabled
+            label: 'Pause Reminders', // Default text assuming auto-start
             style_class: 'break-reminder-menu-button',
             x_align: Clutter.ActorAlign.START,
-            reactive: true,
-            can_focus: true,
-            track_hover: true
+            reactive: true, can_focus: true, track_hover: true
         });
-
         this.toggleItem.connect('clicked', () => {
             this._togglePeriodicReminder();
-            this.toggleItem.label = this.isRunning ? 'Pause Reminders' : 'Start Reminders';
         });
-
         this.panelButton.menu.box.add_child(this.toggleItem);
 
-        // Add settings button
+        // Settings button in menu
         const settingsItem = new St.Button({
             label: 'Settings',
             style_class: 'break-reminder-menu-button',
             x_align: Clutter.ActorAlign.START,
-            reactive: true,
-            can_focus: true,
-            track_hover: true
+            reactive: true, can_focus: true, track_hover: true
         });
-
         settingsItem.connect('clicked', () => {
             this.panelButton.menu.close();
             this.openPreferences();
         });
-
         this.panelButton.menu.box.add_child(settingsItem);
     }
 
+    /**
+     * Called when the extension is enabled.
+     * Initializes settings, panel, and starts the reminder.
+     */
     enable() {
-        // Initialize settings
+        console.log(`Enabling Break Reminder Extension ${this.metadata.uuid}`);
+
+        // Get settings and set initial interval
         this._settings = this.getSettings();
         const minutes = this._settings.get_int('interval-minutes');
-        const seconds = this._settings.get_int('interval-seconds');
+        const seconds = this._settings.get_int('interval-seconds'); // Retrieve seconds from settings
         this.REMINDER_INTERVAL_MS = (minutes * 60 + seconds) * 1000;
 
-        // Initialize panel button
+        // Initialize and add panel button
         this._initPanelButton();
-
-        // Add to panel
         Main.panel.addToStatusArea(this.metadata.uuid, this.panelButton);
 
-        // Connect settings change handlers for both minutes and seconds
+        // Connect to settings changes
         this._settingsChangedId = this._settings.connect('changed', 
             (settings, key) => this._onSettingsChanged(settings, key));
 
-        // Auto-start reminders immediately on login
+        // Auto-start reminders
         this._togglePeriodicReminder();
     }
 
+    /**
+     * Called when the extension is disabled.
+     * Cleans up timers, panel elements, and event connections.
+     */
     disable() {
-        // Clean up timers
-        if (this.timerId) {
-            GLib.source_remove(this.timerId);
-            this.timerId = null;
-        }
+        console.log(`Disabling Break Reminder Extension ${this.metadata.uuid}`);
+        this.isRunning = false; // Mark as not running
 
+        // Clean up timers
         if (this.countdownTimerId) {
             GLib.source_remove(this.countdownTimerId);
             this.countdownTimerId = null;
@@ -294,7 +373,6 @@ export default class BreakReminderExtension extends Extension {
 
         // Clean up notification source
         if (this.notificationSource) {
-            // Remove from message tray first
             Main.messageTray.remove(this.notificationSource);
             this.notificationSource.destroy();
             this.notificationSource = null;
@@ -306,17 +384,17 @@ export default class BreakReminderExtension extends Extension {
             this.panelButton = null;
         }
 
-        // Disconnect settings
+        // Disconnect settings change listener
         if (this._settings && this._settingsChangedId) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = null;
         }
 
-        // Clear references
+        // Clear remaining references
         this.panelText = null;
         this.panelIcon = null;
         this._settings = null;
-        this.isRunning = false;
         this.remainingSeconds = 0;
+        this.isSnoozing = false; // Reset snooze state on disable
     }
 }
