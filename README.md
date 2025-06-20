@@ -17,7 +17,7 @@ A GNOME Shell extension that gently reminds you to take movement breaks and stay
 
 ### From GNOME Extensions Website (Recommended)
 1. Visit [extensions.gnome.org](https://extensions.gnome.org/)
-2. Search for "Movement Break Reminder"
+2. Search for "Break Reminder"
 3. Click the toggle to install and enable
 
 ### Manual Installation
