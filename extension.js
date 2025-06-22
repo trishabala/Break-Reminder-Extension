@@ -31,6 +31,10 @@ export default class BreakReminderExtension extends Extension {
         // this.sleepDetectionThreshold = 5000; // No longer needed for active restart logic
         this._loginManager = null;
         this._prepareForSleepId = null;
+        
+        // ADD: Timeout tracking for proper cleanup
+        this.notificationTimeoutId = null;
+        this.snoozeConfirmationTimeoutId = null;
     }
 
     /**
@@ -126,6 +130,21 @@ export default class BreakReminderExtension extends Extension {
     }
 
     /**
+     * Clear any pending notification timeouts
+     */
+    _clearNotificationTimeouts() {
+        if (this.notificationTimeoutId) {
+            GLib.source_remove(this.notificationTimeoutId);
+            this.notificationTimeoutId = null;
+        }
+        
+        if (this.snoozeConfirmationTimeoutId) {
+            GLib.source_remove(this.snoozeConfirmationTimeoutId);
+            this.snoozeConfirmationTimeoutId = null;
+        }
+    }
+
+    /**
      * Shows a break notification to the user with a snooze option.
      * The notification content changes based on whether it's a regular reminder or after a snooze.
      */
@@ -141,6 +160,9 @@ export default class BreakReminderExtension extends Extension {
         } else {
             timeText = `${intervalSecondsDisplay}s`;
         }
+
+        // Clear any existing notification timeouts before creating new ones
+        this._clearNotificationTimeouts();
 
         // Destroy existing source if present (this was the Type Error fix)
         if (this.notificationSource) {
@@ -192,11 +214,12 @@ export default class BreakReminderExtension extends Extension {
 
         this.notificationSource.addNotification(notification);
 
-        // Auto-dismiss the notification after 10 seconds if not interacted with
-        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
+        // FIXED: Track timeout ID for proper cleanup
+        this.notificationTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
             if (notification && !notification._destroyed) {
                 notification.destroy();
             }
+            this.notificationTimeoutId = null; // Clear the ID when timeout completes
             return GLib.SOURCE_REMOVE;
         });
 
@@ -229,11 +252,12 @@ export default class BreakReminderExtension extends Extension {
             });
             this.notificationSource.addNotification(confirmNotification);
             
-            // Auto-dismiss snooze confirmation after 3 seconds
-            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 3, () => {
+            // FIXED: Track timeout ID for proper cleanup
+            this.snoozeConfirmationTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 3, () => {
                 if (confirmNotification && !confirmNotification._destroyed) {
                     confirmNotification.destroy();
                 }
+                this.snoozeConfirmationTimeoutId = null; // Clear the ID when timeout completes
                 return GLib.SOURCE_REMOVE;
             });
         }
@@ -511,6 +535,9 @@ export default class BreakReminderExtension extends Extension {
             GLib.source_remove(this.countdownTimerId);
             this.countdownTimerId = null;
         }
+
+        // FIXED: Clean up notification timeouts
+        this._clearNotificationTimeouts();
 
         // Clean up notification source
         if (this.notificationSource) {
