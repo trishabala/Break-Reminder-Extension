@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.breakreminder"
+          path="/org/gnome/shell/extensions/breakreminder/">
+    <key name="break-interval" type="i">
+      <default>15</default>
+      <summary>Break Interval (minutes)</summary>
+      <description>How many minutes between movement break reminders.</description>
+      <range min="1" max="240"/>
+    </key>
+  </schema>
+</schemalist>

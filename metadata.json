@@ -1,14 +1,10 @@
 {
-  "uuid": "break-reminder@trishabala.github.com",
-  "name": "Break Reminder",
-  "description": "A simple extension to remind you to take breaks at regular intervals",
-  "shell-version": [
-    "45",
-    "46",
-    "47",
-    "48"
-  ],
+  "id": "break-reminder@trishabala.github.com",
+  "name": "Movement Break Reminder",
+  "description": "Reminds you to take regular movement breaks with a countdown timer in the panel.",
   "version": 2,
-  "url": "https://github.com/trishabala/break-reminder-extension",
-  "settings-schema": "org.gnome.shell.extensions.breakreminder"
+  "shell-version": ["45", "46", "47", "48"],
+  "url": "https://github.com/trishabala/Break-Reminder-Extension",
+  "settings-schema": "org.gnome.shell.extensions.breakreminder",
+  "gettext-domain": "break-reminder@trishabala.github.com"
 }
